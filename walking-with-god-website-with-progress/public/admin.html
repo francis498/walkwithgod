@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Progress Dashboard</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Libre+Baskerville:wght@700&display=swap">
+<style>
+:root{--bg:#EEF2F6;--surface:#fff;--ink:#14202E;--muted:#475667;--line:#C6D1DC;--blue:#1F4E79;--blue-soft:#E3ECF5;--green:#2B662E;--red:#A8261F;--gold:#8A6300;
+  --sans:"Atkinson Hyperlegible",Verdana,system-ui,sans-serif;--serif:"Libre Baskerville",Georgia,serif;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#0F151C;--surface:#18212B;--ink:#EEF2F6;--muted:#A8B5C3;--line:#2E3B49;--blue:#8FBBE8;--blue-soft:#1C2B3B;--green:#8BCB8E;--red:#F29A92;--gold:#E9C15A;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.45;padding-inline:16px;padding-block:24px 48px}
+.wrap{max-width:1100px;margin:0 auto}
+h1{font-family:var(--serif);color:var(--blue);margin:0 0 4px;font-size:1.7em}
+.sub{color:var(--muted);margin:0 0 18px}
+.panel{background:var(--surface);border:2px solid var(--line);border-radius:16px;padding:16px 18px;margin-top:14px}
+input{font:inherit;padding:10px 12px;border:2px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink)}
+button{font:inherit;font-weight:700;cursor:pointer;border:2px solid var(--line);background:var(--surface);color:var(--ink);border-radius:10px;padding:9px 16px}
+button.primary{background:var(--blue);border-color:var(--blue);color:var(--surface)}
+button.danger{color:var(--red);border-color:var(--red)}
+button:focus-visible,input:focus-visible{outline:3px solid var(--blue);outline-offset:2px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-top:14px}
+.tile{background:var(--surface);border:2px solid var(--line);border-radius:14px;padding:12px 16px}
+.tile b{display:block;font-size:1.9em;font-variant-numeric:tabular-nums;color:var(--blue)}
+.tile span{color:var(--muted);font-size:.85em}
+.tablewrap{overflow-x:auto;margin-top:14px;background:var(--surface);border:2px solid var(--line);border-radius:14px}
+table{border-collapse:collapse;width:100%;min-width:760px;font-variant-numeric:tabular-nums}
+th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:.75em;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);cursor:pointer;user-select:none}
+td.name{font-weight:700;white-space:normal}
+.bar{display:inline-block;width:110px;height:10px;border-radius:5px;background:var(--blue-soft);vertical-align:middle;margin-right:8px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--green)}
+.pill{display:inline-block;padding:2px 10px;border-radius:999px;font-size:.8em;font-weight:700}
+.pill.on{background:#E3F1E3;color:#2B662E}.pill.mid{background:#FFF1CC;color:#7A5600}.pill.off{background:#F7E1DF;color:#A8261F}
+.msg{min-height:1.4em;margin-top:10px;font-weight:700}
+.msg.err{color:var(--red)}
+.confirm{display:inline-flex;gap:6px;align-items:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Progress Dashboard</h1>
+  <p class="sub">Walking with God Every Day · private view for the site owner</p>
+
+  <section class="panel" id="login">
+    <form id="lf" class="row">
+      <label for="pw">Dashboard password</label>
+      <input id="pw" type="password" autocomplete="current-password" required>
+      <button class="primary" type="submit">Open dashboard</button>
+    </form>
+    <div class="msg" id="lmsg" aria-live="polite"></div>
+  </section>
+
+  <div id="dash" hidden>
+    <div class="tiles" id="tiles"></div>
+    <section class="panel">
+      <div class="row">
+        <input id="q" type="search" placeholder="Search by name" aria-label="Search by name">
+        <button id="refresh">Refresh</button>
+        <button id="csv">Copy as spreadsheet (CSV)</button>
+        <button id="logout">Lock</button>
+      </div>
+      <div class="msg" id="dmsg" aria-live="polite"></div>
+    </section>
+    <div class="tablewrap">
+      <table>
+        <thead><tr>
+          <th data-k="name">Name</th><th data-k="done">Days completed</th><th data-k="currentDay">On day</th>
+          <th data-k="lastActive">Last active</th><th data-k="active7">Active days (7)</th><th data-k="active30">Active days (30)</th>
+          <th data-k="created">Joined</th><th></th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+let PW = "", USERS = [], sortK = "lastActive", sortDir = -1;
+try { PW = sessionStorage.getItem("wwg-admin") || ""; } catch (_) {}
+
+async function call(method, body){
+  const r = await fetch("/api/admin", { method, headers: { "x-admin-password": PW, "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || "Could not load the dashboard.");
+  return j;
+}
+const fmt = t => t ? new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "—";
+const ago = t => { if (!t) return "never"; const d = Math.floor((Date.now() - t) / 864e5); return d <= 0 ? "today" : d === 1 ? "yesterday" : d + " days ago"; };
+const pill = t => { const d = (Date.now() - t) / 864e5; return d < 3 ? "on" : d < 10 ? "mid" : "off"; };
+
+async function load(){
+  $("#dmsg").textContent = "Loading…"; $("#dmsg").className = "msg";
+  try {
+    const j = await call("GET"); USERS = j.users || [];
+    $("#login").hidden = true; $("#dash").hidden = false; $("#dmsg").textContent = "";
+    draw();
+  } catch (e){
+    $("#login").hidden = false; $("#dash").hidden = true;
+    $("#lmsg").textContent = e.message; $("#lmsg").className = "msg err";
+    try { sessionStorage.removeItem("wwg-admin"); } catch (_) {}
+  }
+}
+function draw(){
+  const q = $("#q").value.trim().toLowerCase();
+  const list = USERS.filter(u => !q || (u.name || "").toLowerCase().includes(q))
+    .sort((a, b) => { const x = a[sortK], y = b[sortK]; return (typeof x === "string" ? x.localeCompare(y) : (x || 0) - (y || 0)) * sortDir; });
+  const now = Date.now();
+  const active7 = USERS.filter(u => now - u.lastActive < 7 * 864e5).length;
+  const avg = USERS.length ? Math.round(USERS.reduce((a, u) => a + u.done, 0) / USERS.length) : 0;
+  const finished = USERS.filter(u => u.done >= 365).length;
+  $("#tiles").innerHTML = [["People", USERS.length], ["Active this week", active7], ["Average days completed", avg], ["Finished all 365", finished]]
+    .map(([l, v]) => `<div class="tile"><b>${v}</b><span>${l}</span></div>`).join("");
+  $("#rows").innerHTML = list.map(u => `<tr>
+    <td class="name">${esc(u.name)}</td>
+    <td><span class="bar"><i style="width:${Math.min(100, u.done / 365 * 100).toFixed(1)}%"></i></span>${u.done} / 365</td>
+    <td>Day ${u.currentDay}</td>
+    <td><span class="pill ${pill(u.lastActive)}">${ago(u.lastActive)}</span></td>
+    <td>${u.active7}</td><td>${u.active30}</td><td>${fmt(u.created)}</td>
+    <td><span class="confirm" data-key="${esc(u.key)}"><button class="danger" data-act="ask">Remove</button></span></td>
+  </tr>`).join("") || `<tr><td colspan="8" style="color:var(--muted)">No one has signed in yet.</td></tr>`;
+  document.querySelectorAll("[data-act='ask']").forEach(b => b.onclick = () => {
+    const box = b.parentElement, name = USERS.find(u => u.key === box.dataset.key)?.name;
+    box.innerHTML = `Remove ${esc(name)}? <button class="danger" data-act="yes">Yes, remove</button><button data-act="no">Keep</button>`;
+    box.querySelector("[data-act='no']").onclick = draw;
+    box.querySelector("[data-act='yes']").onclick = async () => {
+      try { await call("DELETE", { key: box.dataset.key }); USERS = USERS.filter(u => u.key !== box.dataset.key); draw(); $("#dmsg").textContent = "Removed."; }
+      catch (e){ $("#dmsg").textContent = e.message; $("#dmsg").className = "msg err"; }
+    };
+  });
+}
+document.querySelectorAll("th[data-k]").forEach(th => th.onclick = () => { const k = th.dataset.k; sortDir = sortK === k ? -sortDir : -1; sortK = k; draw(); });
+$("#q").oninput = draw;
+$("#refresh").onclick = load;
+$("#logout").onclick = () => { PW = ""; try { sessionStorage.removeItem("wwg-admin"); } catch (_) {} location.reload(); };
+$("#csv").onclick = async () => {
+  const rows = [["Name","Days completed","On day","Last active","Active days (7)","Active days (30)","Joined"]]
+    .concat(USERS.map(u => [u.name, u.done, u.currentDay, fmt(u.lastActive), u.active7, u.active30, fmt(u.created)]));
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+  try { await navigator.clipboard.writeText(csv); $("#dmsg").textContent = "Copied. Paste it into a spreadsheet."; }
+  catch (_) { $("#dmsg").textContent = "Copy didn't work in this browser."; }
+};
+$("#lf").onsubmit = e => { e.preventDefault(); PW = $("#pw").value; try { sessionStorage.setItem("wwg-admin", PW); } catch (_) {} $("#lmsg").textContent = ""; load(); };
+if (PW) load();
+</script>
+</body>
+</html>
