@@ -1,4 +1,3 @@
 [build]
-     base = "walking-with-god-website-with-progress"
-     publish = "public"
-     functions = "netlify/functions"
+  publish = "public"
+  functions = "netlify/functions"
