@@ -1,0 +1,2 @@
+/*
+  Content-Security-Policy: frame-ancestors 'self' https://*.clientclub.net https://ongodserrands.com https://*.ongodserrands.com
